@@ -1,118 +1,92 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import React from 'react';
-import type {PropsWithChildren} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
+  NativeEventEmitter,
+  NativeModules,
   View,
+  Button,
+  FlatList,
+  Text,
+  Alert,
 } from 'react-native';
+import {Peripheral} from './types';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+const {BLEModule} = NativeModules;
+const BLEEventEmitter = new NativeEventEmitter(BLEModule);
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+const App: React.FC = () => {
+  const [peripherals, setPeripherals] = useState<Peripheral[]>([]);
+  const [isScan, setIsScan] = useState<boolean>(false);
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+  useEffect(() => {
+    const onPeripheralDiscovered = BLEEventEmitter.addListener(
+      'onPeripheralDiscovered',
+      (peripheral: Peripheral) => {
+        console.log(peripheral);
+        setPeripherals(prev => {
+          if (prev.some(p => p.id === peripheral.id)) {
+            return prev;
+          } // Avoid duplicates
+          return [...prev, peripheral];
+        });
+      },
+    );
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+    const onScanStart = BLEEventEmitter.addListener('onScanStart', () => {
+      Alert.alert('Scan Started', 'BLE scanning has started.');
+      setIsScan(true);
+    });
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+    const onScanStop = BLEEventEmitter.addListener('onScanStop', () => {
+      Alert.alert('Scan Stopped', 'BLE scanning has stopped.');
+      setIsScan(false);
+    });
+
+    return () => {
+      onPeripheralDiscovered.remove();
+      onScanStart.remove();
+      onScanStop.remove();
+    };
+  }, []);
+
+  const startScan = async () => {
+    console.log('test', BLEModule);
+    try {
+      await BLEModule.startScan();
+    } catch (error) {
+      console.log(error);
+      // Alert.alert('Error', error.message || 'Failed to start scan');
+    }
   };
 
-  return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
+  const stopScan = async () => {
+    try {
+      await BLEModule.stopScan();
+    } catch (error) {
+      // Alert.alert('Error', error.message || 'Failed to stop scan');
+    }
+  };
 
-const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
-  },
-});
+  const renderPeripheral = ({item}: {item: Peripheral}) => (
+    <Text>
+      {item.name || 'Unknown Device'} - RSSI: {item.rssi}
+    </Text>
+  );
+
+  return (
+    <View style={{flex: 1, padding: 20, backgroundColor: 'white'}}>
+      {isScan ? (
+        <Button title="Stop Scan" onPress={stopScan} />
+      ) : (
+        <Button title="Start Scan" onPress={startScan} />
+      )}
+
+      <FlatList
+        data={peripherals}
+        keyExtractor={item => item.id}
+        renderItem={renderPeripheral}
+      />
+    </View>
+  );
+};
 
 export default App;
